@@ -34,7 +34,6 @@
       import {Gltf2Node} from './js/render/nodes/gltf2.js';
       import {DropShadowNode} from './js/render/nodes/drop-shadow.js';
       import {vec3} from './js/render/math/gl-matrix.js';
-      import {DirectionalLightNode} from './js/render/nodes/directional-light.js'; // Import directional light
 
       // AR globals
       let xrRefSpace = null;
@@ -48,16 +47,8 @@
       let arObject = new Node();
       arObject.visible = false;
       scene.addNode(arObject);
-      let directionalLight = new DirectionalLightNode();
-directionalLight.color = [1.0, 1.0, 1.0]; // White light
-directionalLight.intensity = 1.0;         // Adjust brightness
-vec3.set(directionalLight.direction, -1.0, -1.0, -1.0); // Light direction (from top-left)
 
-// Add the light to the scene
-scene.addNode(directionalLight);
-
-      let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
-      flower.scale = [0.1, 0.1, 0.1];
+      let flower = new Gltf2Node({url: 'media/gltf/sunflower/sunflower.gltf'});
       arObject.addNode(flower);
 
       let reticle = new Gltf2Node({url: 'media/gltf/reticle/reticle.gltf'});
