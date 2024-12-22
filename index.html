@@ -48,22 +48,14 @@
       let arObject = new Node();
       arObject.visible = false;
       scene.addNode(arObject);
+      
+      let directionalLight = new DirectionalLightNode();
+directionalLight.color = [1.0, 1.0, 1.0]; // White light
+directionalLight.intensity = 1.0;         // Adjust brightness
+vec3.set(directionalLight.direction, -1.0, -1.0, -1.0); // Light direction (from top-left)
 
-      let ambientLight = new DirectionalLightNode(); // Reusing the same class for simplicity
-ambientLight.color = [0.8, 0.8, 0.8]; // Slightly dimmer white light
-ambientLight.intensity = 0.5; // Lower intensity for ambient effect
-vec3.set(ambientLight.direction, 0.0, -1.0, 0.0); // Uniform downward light
-
-scene.addNode(ambientLight);
-
-// Main Directional Light
-let directionalLight = new DirectionalLightNode();
-directionalLight.color = [1.0, 1.0, 1.0]; // Bright white light
-directionalLight.intensity = 2.0;         // Increased brightness
-vec3.set(directionalLight.direction, -1.0, -1.0, -1.0); // Light coming from top-left
-
+// Add the light to the scene
 scene.addNode(directionalLight);
-
 
       let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
       flower.scale = [0.1, 0.1, 0.1];
