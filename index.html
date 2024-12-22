@@ -49,16 +49,16 @@
       scene.addNode(arObject);
 
       let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
-      flower.scale = [0.3, 0.3, 0.3];
+      flower.scale = [0.1, 0.1, 0.1];
       arObject.addNode(flower);
 
       let reticle = new Gltf2Node({url: 'media/gltf/reticle/reticle.gltf'});
       reticle.visible = false;
       scene.addNode(reticle);
 
-      let shadow = new DropShadowNode();
-      vec3.set(shadow.scale, 0.15, 0.15, 0.15);
-      arObject.addNode(shadow);
+      // let shadow = new DropShadowNode();
+      // vec3.set(shadow.scale, 0.15, 0.15, 0.15);
+      // arObject.addNode(shadow);
 
       const MAX_FLOWERS = 30;
       let flowers = [];
