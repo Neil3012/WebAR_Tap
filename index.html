@@ -30,7 +30,7 @@
       import {WebXRButton} from './js/util/webxr-button.js';
       import {Scene} from './js/render/scenes/scene.js';
       import {Renderer, createWebGLContext} from './js/render/core/renderer.js';
-      import {Node} from './js/render/core/node.js';
+      import {Node, DirectionalLight} from './js/render/core/node.js'; <!-- Added DirectionalLight -->
       import {Gltf2Node} from './js/render/nodes/gltf2.js';
       import {DropShadowNode} from './js/render/nodes/drop-shadow.js';
       import {vec3} from './js/render/math/gl-matrix.js';
@@ -44,11 +44,18 @@
       let scene = new Scene();
       scene.clear = false; // Ensure transparent background for AR
 
+      // Add light to the scene
+      let directionalLight = new DirectionalLight();
+      vec3.set(directionalLight.direction, -1, -1, -1); // Adjust light direction
+      vec3.set(directionalLight.color, 1.0, 1.0, 1.0);  // White light
+      scene.addNode(directionalLight);
+
       let arObject = new Node();
       arObject.visible = false;
       scene.addNode(arObject);
 
-      let flower = new Gltf2Node({url: 'media/gltf/sunflower/sunflower.gltf'});
+      let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
+      flower.scale(0.1, 0.1, 0.1); // Reduced scale
       arObject.addNode(flower);
 
       let reticle = new Gltf2Node({url: 'media/gltf/reticle/reticle.gltf'});
