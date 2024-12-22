@@ -56,9 +56,9 @@
       reticle.visible = false;
       scene.addNode(reticle);
 
-      // let shadow = new DropShadowNode();
-      // vec3.set(shadow.scale, 0.15, 0.15, 0.15);
-      // arObject.addNode(shadow);
+      let shadow = new DropShadowNode();
+      vec3.set(shadow.scale, 0.15, 0.15, 0.15);
+      arObject.addNode(shadow);
 
       const MAX_FLOWERS = 30;
       let flowers = [];
