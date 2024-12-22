@@ -72,19 +72,24 @@
 
       // Initialize AR session
       function initXR() {
-        if (navigator.xr) {
-          navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-            if (supported) {
-              navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local', 'hit-test']})
-                .then(onSessionStarted)
-                .catch(console.error);
-            } else {
-              alert('AR not supported on this device.');
-            }
-          });
-        } else {
+        if (!navigator.xr) {
           alert('WebXR not supported in this browser.');
+          return;
         }
+
+        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+          if (!supported) {
+            alert('AR not supported on this device.');
+            return;
+          }
+
+          navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local', 'hit-test']})
+            .then(onSessionStarted)
+            .catch((err) => {
+              console.error(err);
+              alert('Failed to start AR session.');
+            });
+        });
       }
 
       // Session started
@@ -156,7 +161,7 @@
       overlay.addEventListener('click', () => {
         overlay.style.display = 'none'; // Hide overlay after interaction
         initXR();
-      }, { once: true });
+      });
     </script>
   </body>
 </html>
