@@ -19,7 +19,6 @@
         justify-content: center;
         z-index: 1000;
         font-size: 24px;
-        cursor: pointer;
       }
     </style>
   </head>
@@ -31,7 +30,7 @@
       import {WebXRButton} from './js/util/webxr-button.js';
       import {Scene} from './js/render/scenes/scene.js';
       import {Renderer, createWebGLContext} from './js/render/core/renderer.js';
-      import {Node, DirectionalLight} from './js/render/core/node.js';
+      import {Node} from './js/render/core/node.js';
       import {Gltf2Node} from './js/render/nodes/gltf2.js';
       import {DropShadowNode} from './js/render/nodes/drop-shadow.js';
       import {vec3} from './js/render/math/gl-matrix.js';
@@ -45,18 +44,12 @@
       let scene = new Scene();
       scene.clear = false; // Ensure transparent background for AR
 
-      // Add light to the scene
-      let directionalLight = new DirectionalLight();
-      vec3.set(directionalLight.direction, -1, -1, -1); // Adjust light direction
-      vec3.set(directionalLight.color, 1.0, 1.0, 1.0);  // White light
-      scene.addNode(directionalLight);
-
       let arObject = new Node();
       arObject.visible = false;
       scene.addNode(arObject);
 
       let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
-      flower.scale(0.1, 0.1, 0.1); // Reduced scale
+      flower.scale(0.3,0.3,0.3);
       arObject.addNode(flower);
 
       let reticle = new Gltf2Node({url: 'media/gltf/reticle/reticle.gltf'});
@@ -72,24 +65,19 @@
 
       // Initialize AR session
       function initXR() {
-        if (!navigator.xr) {
+        if (navigator.xr) {
+          navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+            if (supported) {
+              navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local', 'hit-test']})
+                .then(onSessionStarted)
+                .catch(console.error);
+            } else {
+              alert('AR not supported on this device.');
+            }
+          });
+        } else {
           alert('WebXR not supported in this browser.');
-          return;
         }
-
-        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-          if (!supported) {
-            alert('AR not supported on this device.');
-            return;
-          }
-
-          navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local', 'hit-test']})
-            .then(onSessionStarted)
-            .catch((err) => {
-              console.error(err);
-              alert('Failed to start AR session.');
-            });
-        });
       }
 
       // Session started
@@ -161,7 +149,7 @@
       overlay.addEventListener('click', () => {
         overlay.style.display = 'none'; // Hide overlay after interaction
         initXR();
-      });
+      }, { once: true });
     </script>
   </body>
 </html>
