@@ -11,7 +11,7 @@
     import { Node } from './js/render/core/node.js';
     import { Gltf2Node } from './js/render/nodes/gltf2.js';
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
-    import { vec3, quat } from './js/render/math/gl-matrix.js';
+    import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
     let isDragging = false;
     let lastPointerX = 0;
@@ -71,16 +71,26 @@
     }
 
     function onPointerDown(event) {
-      isDragging = true;
-      lastPointerX = event.clientX;
+      if (arObject.visible) { // Only allow rotation if the AR object is visible
+        isDragging = true;
+        lastPointerX = event.clientX;
+      }
     }
 
     function onPointerMove(event) {
-      if (isDragging) {
+      if (isDragging && arObject.visible) {
         let deltaX = event.clientX - lastPointerX;
         let rotationAmount = deltaX * rotationSpeed;
 
+        // Apply rotation to the AR object
         quat.rotateY(arObject.rotation, arObject.rotation, rotationAmount);
+        arObject.matrix = mat4.fromRotationTranslationScale(
+          mat4.create(),
+          arObject.rotation,
+          arObject.translation,
+          arObject.scale
+        );
+
         lastPointerX = event.clientX;
       }
     }
@@ -133,17 +143,16 @@
     }
 
     function addARObjectAt(matrix) {
-      let newFlower = arObject.clone();
-      newFlower.visible = true;
-      newFlower.matrix = matrix;
-      scene.addNode(newFlower);
+      arObject.visible = true;
+      mat4.copy(arObject.matrix, matrix);
 
-      flowers.push(newFlower);
-
-      if (flowers.length > MAX_FLOWERS) {
+      // Remove older flowers to maintain performance
+      if (flowers.length >= MAX_FLOWERS) {
         let oldFlower = flowers.shift();
         scene.removeNode(oldFlower);
       }
+
+      flowers.push(arObject);
     }
 
     function onSelect(event) {
@@ -163,7 +172,7 @@
         if (hitTestResults.length > 0) {
           let pose = hitTestResults[0].getPose(xrRefSpace);
           reticle.visible = true;
-          reticle.matrix = pose.transform.matrix;
+          mat4.copy(reticle.matrix, pose.transform.matrix);
         }
       }
 
