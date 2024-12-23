@@ -13,9 +13,10 @@
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
     import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
+    // Global variables
     let isDragging = false;
     let lastPointerX = 0;
-    let rotationSpeed = 0.01;
+    let rotationSpeed = 0.005;
 
     let xrButton = null;
     let xrRefSpace = null;
@@ -43,18 +44,14 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
-    const MAX_FLOWERS = 1;
-    let flowers = [];
-
-    scene.clear = false;
-
+    // Initialize WebXR
     function initXR() {
       xrButton = new WebXRButton({
         onRequestSession: onRequestSession,
         onEndSession: onEndSession,
         textEnterXRTitle: "START AR",
         textXRNotFoundTitle: "AR NOT FOUND",
-        textExitXRTitle: "EXIT  AR",
+        textExitXRTitle: "EXIT AR",
       });
       document.querySelector('header').appendChild(xrButton.domElement);
 
@@ -65,13 +62,14 @@
           });
       }
 
+      // Add pointer event listeners for rotation
       document.addEventListener('pointerdown', onPointerDown);
       document.addEventListener('pointermove', onPointerMove);
       document.addEventListener('pointerup', onPointerUp);
     }
 
     function onPointerDown(event) {
-      if (arObject.visible) { // Only allow rotation if the AR object is visible
+      if (arObject.visible) {
         isDragging = true;
         lastPointerX = event.clientX;
       }
@@ -79,13 +77,15 @@
 
     function onPointerMove(event) {
       if (isDragging && arObject.visible) {
-        let deltaX = event.clientX - lastPointerX;
-        let rotationAmount = deltaX * rotationSpeed;
+        const deltaX = event.clientX - lastPointerX;
+        const rotationAmount = deltaX * rotationSpeed;
 
-        // Apply rotation to the AR object
+        // Rotate the AR object
         quat.rotateY(arObject.rotation, arObject.rotation, rotationAmount);
-        arObject.matrix = mat4.fromRotationTranslationScale(
-          mat4.create(),
+
+        // Update the transformation matrix
+        mat4.fromRotationTranslationScale(
+          arObject.matrix,
           arObject.rotation,
           arObject.translation,
           arObject.scale
@@ -95,7 +95,7 @@
       }
     }
 
-    function onPointerUp(event) {
+    function onPointerUp() {
       isDragging = false;
     }
 
@@ -132,30 +132,16 @@
       });
     }
 
-    function onEndSession(session) {
-      xrHitTestSource.cancel();
-      xrHitTestSource = null;
-      session.end();
-    }
-
-    function onSessionEnded(event) {
+    function onSessionEnded() {
       xrButton.setSession(null);
     }
 
     function addARObjectAt(matrix) {
       arObject.visible = true;
       mat4.copy(arObject.matrix, matrix);
-
-      // Remove older flowers to maintain performance
-      if (flowers.length >= MAX_FLOWERS) {
-        let oldFlower = flowers.shift();
-        scene.removeNode(oldFlower);
-      }
-
-      flowers.push(arObject);
     }
 
-    function onSelect(event) {
+    function onSelect() {
       if (reticle.visible) {
         addARObjectAt(reticle.matrix);
       }
@@ -170,9 +156,9 @@
       if (xrHitTestSource && pose) {
         let hitTestResults = frame.getHitTestResults(xrHitTestSource);
         if (hitTestResults.length > 0) {
-          let pose = hitTestResults[0].getPose(xrRefSpace);
+          let hitPose = hitTestResults[0].getPose(xrRefSpace);
           reticle.visible = true;
-          mat4.copy(reticle.matrix, pose.transform.matrix);
+          mat4.copy(reticle.matrix, hitPose.transform.matrix);
         }
       }
 
@@ -182,6 +168,7 @@
       scene.endFrame();
     }
 
+    // Start the XR application
     initXR();
   </script>
 </head>
