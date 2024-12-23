@@ -17,7 +17,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 1000;
+        z-index: 9999; /* Ensure it's on top of other elements */
         font-size: 24px;
       }
     </style>
@@ -49,7 +49,7 @@
       scene.addNode(arObject);
 
       let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
-      flower.scale(0.3,0.3,0.3);
+      flower.scale(0.3, 0.3, 0.3);
       arObject.addNode(flower);
 
       let reticle = new Gltf2Node({url: 'media/gltf/reticle/reticle.gltf'});
@@ -132,9 +132,9 @@
         if (xrHitTestSource && pose) {
           let hitTestResults = frame.getHitTestResults(xrHitTestSource);
           if (hitTestResults.length > 0) {
-            let pose = hitTestResults[0].getPose(xrRefSpace);
+            let hitPose = hitTestResults[0].getPose(xrRefSpace);
             reticle.visible = true;
-            reticle.matrix = pose.transform.matrix;
+            reticle.matrix = hitPose.transform.matrix;
           }
         }
 
@@ -147,6 +147,7 @@
       // Tap-to-start AR logic
       const overlay = document.getElementById('overlay');
       overlay.addEventListener('click', () => {
+        console.log('Overlay clicked!'); // Debugging line to ensure tap is detected
         overlay.style.display = 'none'; // Hide overlay after interaction
         initXR();
       }, { once: true });
