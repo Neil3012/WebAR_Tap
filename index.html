@@ -28,7 +28,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
     <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
     <link rel='stylesheet' href='css/common.css'>
-
     <title>Hit Test</title>
   </head>
   <body>
@@ -67,8 +66,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       arObject.visible = false;
       scene.addNode(arObject);
 
-      // let flower = new Gltf2Node({url: 'media/gltf/xmastree/xmastree5.glb'});
-      // flower.scale(0.3,0.3,0.3);
       let flower = new Gltf2Node({url: 'media/gltf/xmastree/Xtree.glb'});
       flower.scale.set(0.01, 0.01, 0.01);
       arObject.addNode(flower);
@@ -77,8 +74,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       reticle.visible = false;
       scene.addNode(reticle);
 
-      // Having a really simple drop shadow underneath an object helps ground
-      // it in the world without adding much complexity.
       let shadow = new DropShadowNode();
       vec3.set(shadow.scale, 0.15, 0.15, 0.15);
       arObject.addNode(shadow);
@@ -86,8 +81,71 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
       const MAX_FLOWERS = 30;
       let flowers = [];
 
-      // Ensure the background is transparent for AR.
       scene.clear = false;
+
+      // Global variables for touch controls
+      let isScaling = false;
+      let isRotating = false;
+      let initialDistance = 0;
+      let initialAngle = 0;
+      let lastRotation = 0;
+      let lastScale = 1;
+
+      document.addEventListener('touchstart', handleTouchStart);
+      document.addEventListener('touchmove', handleTouchMove);
+      document.addEventListener('touchend', handleTouchEnd);
+
+      function handleTouchStart(event) {
+        if (event.touches.length === 2) {
+          isScaling = true;
+          isRotating = true;
+          initialDistance = getDistance(event.touches[0], event.touches[1]);
+          initialAngle = getAngle(event.touches[0], event.touches[1]);
+        }
+      }
+
+      function handleTouchMove(event) {
+        if (isScaling && event.touches.length === 2) {
+          const currentDistance = getDistance(event.touches[0], event.touches[1]);
+          const scaleFactor = currentDistance / initialDistance;
+          arObject.scale.set(
+            lastScale * scaleFactor,
+            lastScale * scaleFactor,
+            lastScale * scaleFactor
+          );
+
+          const currentAngle = getAngle(event.touches[0], event.touches[1]);
+          const rotationDelta = currentAngle - initialAngle;
+          arObject.rotation[1] = lastRotation + rotationDelta * (Math.PI / 180); // Y-axis rotation
+        }
+      }
+
+      function handleTouchEnd(event) {
+        if (event.touches.length < 2) {
+          isScaling = false;
+          isRotating = false;
+          lastScale = arObject.scale[0];
+          lastRotation = arObject.rotation[1];
+        }
+      }
+
+      function getDistance(touch1, touch2) {
+        return Math.sqrt(
+          Math.pow(touch2.pageX - touch1.pageX, 2) +
+          Math.pow(touch2.pageY - touch1.pageY, 2)
+        );
+      }
+
+      function getAngle(touch1, touch2) {
+        return (
+          (Math.atan2(
+            touch2.pageY - touch1.pageY,
+            touch2.pageX - touch1.pageX
+          ) *
+            180) /
+          Math.PI
+        );
+      }
 
       function initXR() {
         xrButton = new WebXRButton({
@@ -95,24 +153,24 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           onEndSession: onEndSession,
           textEnterXRTitle: "START AR",
           textXRNotFoundTitle: "AR NOT FOUND",
-          textExitXRTitle: "EXIT  AR",
+          textExitXRTitle: "EXIT AR",
         });
         document.querySelector('header').appendChild(xrButton.domElement);
 
         if (navigator.xr) {
           navigator.xr.isSessionSupported('immersive-ar')
-                      .then((supported) => {
-            xrButton.enabled = supported;
-          });
+            .then((supported) => {
+              xrButton.enabled = supported;
+            });
         }
       }
 
       function onRequestSession() {
-        return navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local', 'hit-test']})
-                           .then((session) => {
-          xrButton.setSession(session);
-          onSessionStarted(session);
-        });
+        return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
+          .then((session) => {
+            xrButton.setSession(session);
+            onSessionStarted(session);
+          });
       }
 
       function onSessionStarted(session) {
@@ -125,16 +183,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           });
 
           renderer = new Renderer(gl);
-
           scene.setRenderer(renderer);
         }
 
         session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
 
-        // In this sample we want to cast a ray straight out from the viewer's
-        // position and render a reticle where it intersects with a real world
-        // surface. To do this we first get the viewer space, then create a
-        // hitTestSource that tracks it.
         session.requestReferenceSpace('viewer').then((refSpace) => {
           xrViewerSpace = refSpace;
           session.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
@@ -159,45 +212,30 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         xrButton.setSession(null);
       }
 
-      // Adds a new object to the scene at the
-      // specified transform.
       function addARObjectAt(matrix) {
-        let newFlower = arObject.clone();
-        newFlower.visible = true;
-        newFlower.matrix = matrix;
-        scene.addNode(newFlower);
-
-        flowers.push(newFlower);
-
-        // For performance reasons if we add too many objects start
-        // removing the oldest ones to keep the scene complexity
-        // from growing too much.
-        if (flowers.length > MAX_FLOWERS) {
-          let oldFlower = flowers.shift();
-          scene.removeNode(oldFlower);
+        if (!arObject.visible) {
+          arObject.visible = true;
+          arObject.matrix = matrix;
+        } else {
+          arObject.matrix = matrix;
         }
       }
 
       let rayOrigin = vec3.create();
       let rayDirection = vec3.create();
+
       function onSelect(event) {
         if (reticle.visible) {
-          // The reticle should already be positioned at the latest hit point, 
-          // so we can just use it's matrix to save an unnecessary call to 
-          // event.frame.getHitTestResults.
           addARObjectAt(reticle.matrix);
         }
       }
 
-      // Called every time a XRSession requests that a new frame be drawn.
       function onXRFrame(t, frame) {
         let session = frame.session;
         let pose = frame.getViewerPose(xrRefSpace);
 
         reticle.visible = false;
 
-        // If we have a hit test source, get its results for the frame
-        // and use the pose to display a reticle in the scene.
         if (xrHitTestSource && pose) {
           let hitTestResults = frame.getHitTestResults(xrHitTestSource);
           if (hitTestResults.length > 0) {
@@ -208,15 +246,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
         }
 
         scene.startFrame();
-
         session.requestAnimationFrame(onXRFrame);
-
         scene.drawXRFrame(frame, pose);
-
         scene.endFrame();
       }
 
-      // Start the XR application.
       initXR();
     </script>
   </body>
