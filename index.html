@@ -13,17 +13,20 @@
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
     import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
+    // Variables for interaction
     let isDragging = false;
     let isPinching = false;
     let lastPointerX = 0;
     let lastPinchDistance = 0;
     let rotationSpeed = 0.005;
 
+    // XR variables
     let xrButton = null;
     let xrRefSpace = null;
     let xrViewerSpace = null;
     let xrHitTestSource = null;
 
+    // Renderer, scene, and AR object
     let gl = null;
     let renderer = null;
     let scene = new Scene();
@@ -45,6 +48,7 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
+    // Session cleanup
     function onEndSession(session) {
       if (xrHitTestSource) {
         xrHitTestSource.cancel();
@@ -52,10 +56,10 @@
       }
       session.end().then(() => {
         xrButton.setSession(null);
-        console.log("XR session ended.");
       });
     }
 
+    // Initialize XR
     function initXR() {
       xrButton = new WebXRButton({
         onRequestSession: onRequestSession,
@@ -81,6 +85,7 @@
       document.addEventListener('touchend', onTouchEnd);
     }
 
+    // Pointer (Mouse/Touch) handlers
     function onPointerDown(event) {
       if (arObject.visible) {
         isDragging = true;
@@ -110,6 +115,7 @@
       isDragging = false;
     }
 
+    // Pinch-to-scale handlers
     function onTouchStart(event) {
       if (event.touches.length === 2 && arObject.visible) {
         isPinching = true;
@@ -124,6 +130,7 @@
 
         vec3.scale(arObject.scale, arObject.scale, scaleDelta);
 
+        // Clamp scale
         const minScale = 0.01;
         const maxScale = 1.0;
         arObject.scale[0] = Math.max(minScale, Math.min(maxScale, arObject.scale[0]));
@@ -154,6 +161,7 @@
       return Math.sqrt(dx * dx + dy * dy);
     }
 
+    // XR Session Management
     function onRequestSession() {
       return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
         .then((session) => {
