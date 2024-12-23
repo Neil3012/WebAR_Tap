@@ -44,6 +44,19 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
+    function onEndSession(session) {
+      if (xrHitTestSource) {
+        xrHitTestSource.cancel();
+        xrHitTestSource = null;
+      }
+    
+      // Clean up AR session
+      session.end().then(() => {
+        xrButton.setSession(null);
+        console.log("XR session ended.");
+      });
+    }
+
     // Initialize WebXR
     function initXR() {
       xrButton = new WebXRButton({
