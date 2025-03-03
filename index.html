@@ -1,267 +1,186 @@
-<!doctype html>
-<!--
-Copyright 2018 The Immersive Web Community Group
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Object Interaction</title>
+  <script type="module">
+    import { WebXRButton } from './js/util/webxr-button.js';
+    import { Scene } from './js/render/scenes/scene.js';
+    import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
+    import { Node } from './js/render/core/node.js';
+    import { Gltf2Node } from './js/render/nodes/gltf2.js';
+    import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
+    import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
+    import { VideoNode } from './js/render/nodes/video.js';
+    import { ButtonNode } from './js/render/nodes/button.js';
+    import { UrlTexture } from './js/render/core/texture.js';
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
+    // Variables for interaction
+    let isDragging = false;
+    let isPinching = false;
+    let lastPointerX = 0;
+    let lastPinchDistance = 0;
+    let rotationSpeed = 0.005;
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+    // XR variables
+    let xrButton = null;
+    let xrRefSpace = null;
+    let xrViewerSpace = null;
+    let xrHitTestSource = null;
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
--->
-<html>
-  <head>
-    <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
-    <meta name='mobile-web-app-capable' content='yes'>
-    <meta name='apple-mobile-web-app-capable' content='yes'>
-    <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
-    <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
-    <link rel='stylesheet' href='css/common.css'>
+    // Renderer, scene, and AR object
+    let gl = null;
+    let renderer = null;
+    let scene = new Scene();
+    scene.enableStats(false);
 
-    <title>Stereo Video Player</title>
-  </head>
-  <body>
-    <header>
-      <details open>
-        <summary>Stereo Video Player</summary>
-        <p>
-          This sample demonstrates how to play a stereo 3D video.
-          <a class="back" href="./">Back</a>
-          <br/>
-          <hr/>
-          Autoplay when VR starts: <input id='autoplayVideo' type='checkbox'/>
-        </p>
-      </summary>
-    </header>
-    <script type="module">
-      import {WebXRButton} from './js/util/webxr-button.js';
-      import {Scene} from './js/render/scenes/scene.js';
-      import {Renderer, createWebGLContext} from './js/render/core/renderer.js';
-      import {UrlTexture} from './js/render/core/texture.js';
-      import {ButtonNode} from './js/render/nodes/button.js';
-      import {Gltf2Node} from './js/render/nodes/gltf2.js';
-      import {VideoNode} from './js/render/nodes/video.js';
-      import {InlineViewerHelper} from './js/util/inline-viewer-helper.js';
-      import {QueryArgs} from './js/util/query-args.js';
+    let arObject = new Node();
+    arObject.visible = false;
+    scene.addNode(arObject);
 
-      // If requested, use the polyfill to provide support for mobile devices
-      // and devices which only support WebVR.
-      import WebXRPolyfill from './js/third-party/webxr-polyfill/build/webxr-polyfill.module.js';
-      if (QueryArgs.getBool('usePolyfill', true)) {
-        let polyfill = new WebXRPolyfill();
+    let flower = new Gltf2Node({ url: 'media/gltf/xmastree/Xtree.glb' });
+    flower.scale.set(0.01, 0.01, 0.01);
+    arObject.addNode(flower);
+
+    let reticle = new Gltf2Node({ url: 'media/gltf/reticle/reticle.gltf' });
+    reticle.visible = false;
+    scene.addNode(reticle);
+
+    let shadow = new DropShadowNode();
+    vec3.set(shadow.scale, 0.15, 0.15, 0.15);
+    arObject.addNode(shadow);
+
+    let video = document.createElement('video');
+    video.loop = true;
+    video.src = 'media/video/Demowebm.webm';
+
+    let playTexture = new UrlTexture('media/textures/play-button.png');
+
+    let playButton = new ButtonNode(playTexture, () => {
+      if (video.paused) {
+        playButton.visible = false;
+        video.play();
       }
+    });
+    playButton.translation = [0.025, 0.275, -4.2];
+    playButton.scale = [5.0, 5.0, 5.0];
+    scene.addNode(playButton);
 
-      let autoplayCheckbox = document.getElementById('autoplayVideo');
+    let videoNode = new VideoNode({
+      video: video,
+      displayMode: 'stereoTopBottom'
+    });
 
-      // XR globals.
-      let xrButton = null;
-      let xrImmersiveRefSpace = null;
-      let inlineViewerHelper = null;
+    videoNode.onSelect(() => {
+      if (!video.paused) {
+        playButton.visible = true;
+        video.pause();
+      } else {
+        playButton.visible = false;
+        video.play();
+      }
+    });
+    videoNode.selectable = true;
+    videoNode.translation = [0.025, 0.275, -4.4];
+    videoNode.scale = [2.1, 1.1, 1.0];
+    scene.addNode(videoNode);
 
-      // WebGL scene globals.
-      let gl = null;
-      let renderer = null;
-      let scene = new Scene();
-      scene.addNode(new Gltf2Node({url: 'media/gltf/home-theater/home-theater.gltf'}));
-      scene.enableStats(false);
+    video.addEventListener('loadeddata', () => {
+      let aspect = video.videoWidth / video.videoHeight;
+      if (aspect < 2.0) {
+        videoNode.scale = [aspect * 1.1, 1.1, 1.0];
+      } else {
+        videoNode.scale = [2.1, 2.1 / aspect, 1.0];
+      }
+    });
 
-      let video = document.createElement('video');
-      video.loop = true;
-      video.src = 'media/video/Demowebm.webm';
+    function onEndSession(session) {
+      if (xrHitTestSource) {
+        xrHitTestSource.cancel();
+        xrHitTestSource = null;
+      }
+    }
 
-      let videoNode = new VideoNode({
-        video: video,
-        displayMode: 'stereoTopBottom'
+    function initXR() {
+      xrButton = new WebXRButton({
+        onRequestSession: onRequestSession,
+        onEndSession: onEndSession,
+        textEnterXRTitle: "START AR",
+        textXRNotFoundTitle: "AR NOT FOUND",
+        textExitXRTitle: "EXIT AR",
       });
+      document.querySelector('header').appendChild(xrButton.domElement);
 
-      // When the video is clicked we'll pause it if it's playing.
-      videoNode.onSelect(() => {
-        if (!video.paused) {
-          playButton.visible = true;
-          video.pause();
-        } else {
-          playButton.visible = false;
-          video.play();
-        }
-      });
-      videoNode.selectable = true;
-
-      // Move back to the position of the in-room screen and size to cover it.
-      // Values determined experimentally and with many refreshes.
-      videoNode.translation = [0.025, 0.275, -4.4];
-      videoNode.scale = [2.1, 1.1, 1.0];
-      scene.addNode(videoNode);
-
-      video.addEventListener('loadeddata', () => {
-        // Once the video has loaded up adjust the aspect ratio of the "screen"
-        // to fit the video's native shape.
-        let aspect = videoNode.aspectRatio;
-        if (aspect < 2.0) {
-          videoNode.scale = [aspect * 1.1, 1.1, 1.0];
-        } else {
-          videoNode.scale = [2.1, 2.1 / aspect, 1.0];
-        }
-      });
-
-      // Add a button to the scene to play/pause the movie.
-      let playTexture = new UrlTexture('media/textures/play-button.png');
-
-      // Create a button that plays the video when clicked.
-      let playButton = new ButtonNode(playTexture, () => {
-        // Play the video and hide the button.
-        if (video.paused) {
-          playButton.visible = false;
-          video.play();
-        }
-      });
-      // Move the play button to the center of the screen and make it much
-      // bigger.
-      playButton.translation = [0.025, 0.275, -4.2];
-      playButton.scale = [5.0, 5.0, 5.0];
-      scene.addNode(playButton);
-
-      function initXR() {
-        xrButton = new WebXRButton({
-          onRequestSession: onRequestSession,
-          onEndSession: onEndSession
-        });
-        document.querySelector('header').appendChild(xrButton.domElement);
-
-        if (navigator.xr) {
-          navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+      if (navigator.xr) {
+        navigator.xr.isSessionSupported('immersive-ar')
+          .then((supported) => {
             xrButton.enabled = supported;
           });
-
-          navigator.xr.requestSession('inline').then(onSessionStarted);
-        }
       }
+    }
 
-      function initGL() {
-        if (gl)
-          return;
-
-        gl = createWebGLContext({
-          xrCompatible: true
+    function onRequestSession() {
+      return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
+        .then((session) => {
+          xrButton.setSession(session);
+          onSessionStarted(session);
         });
-        document.body.appendChild(gl.canvas);
+    }
 
-        function onResize() {
-          gl.canvas.width = gl.canvas.clientWidth * window.devicePixelRatio;
-          gl.canvas.height = gl.canvas.clientHeight * window.devicePixelRatio;
-        }
-        window.addEventListener('resize', onResize);
-        onResize();
+    function onSessionStarted(session) {
+      session.addEventListener('end', onSessionEnded);
+      session.addEventListener('select', onSelect);
 
+      if (!gl) {
+        gl = createWebGLContext({ xrCompatible: true });
         renderer = new Renderer(gl);
         scene.setRenderer(renderer);
       }
-
-      function onRequestSession() {
-        let autoplay = autoplayCheckbox.checked;
-
-        let pending;
-
-        if (autoplay) {
-          // If we want the video to autoplay when the session has fully started
-          // (which may be several seconds after the original requestSession
-          // call due to clicking through consent prompts or similar) then we
-          // need to start the video within a user activation event first
-          // (which this function is.) Once it's been started successfully we
-          // pause it, at which point we can resume it pretty much whenever we'd
-          // like.
-          pending = video.play().then(() => {
-            video.pause();
-          });
-        }
-
-        return navigator.xr.requestSession('immersive-vr', {
-            requiredFeatures: ['local-floor']
-        }).then((session) => {
-          xrButton.setSession(session);
-          session.isImmersive = true;
-          onSessionStarted(session);
-
-          if (autoplay) {
-            pending.then(() => {
-              video.play();
-            });
-          }
-        });
-      }
-
-      function onSessionStarted(session) {
-        session.addEventListener('end', onSessionEnded);
-        session.addEventListener('select', (ev) => {
-          let refSpace = ev.frame.session.isImmersive ?
-                           xrImmersiveRefSpace :
-                           inlineViewerHelper.referenceSpace;
-          scene.handleSelect(ev.inputSource, ev.frame, refSpace);
-        });
-
-        initGL();
-        scene.inputRenderer.useProfileControllerMeshes(session);
-
-        let glLayer = new XRWebGLLayer(session, gl);
-        session.updateRenderState({ baseLayer: glLayer });
-
-        // In this case we're going to use an 'local' frame of reference
-        // because we want to users head to appear in the right place relative
-        // to the center chair, as if they're sitting in it, rather than
-        // somewhere in the room relative to the floor.
-        let refSpaceType = session.isImmersive ? 'local' : 'viewer';
-        session.requestReferenceSpace(refSpaceType).then((refSpace) => {
-          if (session.isImmersive) {
-            xrImmersiveRefSpace = refSpace;
-          } else {
-            inlineViewerHelper = new InlineViewerHelper(gl.canvas, refSpace);
-          }
-
-          session.requestAnimationFrame(onXRFrame);
-        });
-      }
-
-      function onEndSession(session) {
-        session.end();
-      }
-
-      function onSessionEnded(event) {
-        if (event.session.isImmersive) {
-          xrButton.setSession(null);
-          video.pause();
-        }
-      }
-
-      function onXRFrame(t, frame) {
-        let session = frame.session;
-        let refSpace = session.isImmersive ?
-                         xrImmersiveRefSpace :
-                         inlineViewerHelper.referenceSpace;
-        let pose = frame.getViewerPose(refSpace);
-
-        scene.startFrame();
-
+      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+      session.requestReferenceSpace('local').then((refSpace) => {
+        xrRefSpace = refSpace;
         session.requestAnimationFrame(onXRFrame);
+      });
+    }
 
-        scene.updateInputSources(frame, refSpace);
+    function onSessionEnded() {
+      xrButton.setSession(null);
+    }
 
-        scene.drawXRFrame(frame, pose);
-
-        scene.endFrame();
+    function onSelect() {
+      if (reticle.visible) {
+        addARObjectAt(reticle.matrix);
       }
+    }
 
-      // Start the XR application.
-      initXR();
-    </script>
-  </body>
+    function addARObjectAt(matrix) {
+      arObject.visible = true;
+      mat4.copy(arObject.matrix, matrix);
+    }
+
+    function onXRFrame(t, frame) {
+      let session = frame.session;
+      let pose = frame.getViewerPose(xrRefSpace);
+      reticle.visible = false;
+      if (xrHitTestSource && pose) {
+        let hitTestResults = frame.getHitTestResults(xrHitTestSource);
+        if (hitTestResults.length > 0) {
+          let hitPose = hitTestResults[0].getPose(xrRefSpace);
+          reticle.visible = true;
+          mat4.copy(reticle.matrix, hitPose.transform.matrix);
+        }
+      }
+      scene.startFrame();
+      session.requestAnimationFrame(onXRFrame);
+      scene.drawXRFrame(frame, pose);
+      scene.endFrame();
+    }
+
+    initXR();
+  </script>
+</head>
+<body>
+  <header></header>
+</body>
 </html>
