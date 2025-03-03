@@ -3,22 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR Object with Real-Time Reflections</title>
+  <title>AR Object Interaction</title>
   <script type="module">
- import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
-    import { RGBELoader } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/loaders/RGBELoader.js';
     import { WebXRButton } from './js/util/webxr-button.js';
     import { Scene } from './js/render/scenes/scene.js';
     import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
     import { Node } from './js/render/core/node.js';
     import { Gltf2Node } from './js/render/nodes/gltf2.js';
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
-    import { vec3, mat4 } from './js/render/math/gl-matrix.js';
-   
+    import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
+    // Variables for interaction
+    let isDragging = false;
+    let isPinching = false;
+    let lastPointerX = 0;
+    let lastPinchDistance = 0;
+    let rotationSpeed = 0.005;
+
+    // XR variables
     let xrButton = null;
     let xrRefSpace = null;
+    let xrViewerSpace = null;
     let xrHitTestSource = null;
+
+    // Renderer, scene, and AR object
     let gl = null;
     let renderer = null;
     let scene = new Scene();
@@ -28,7 +36,7 @@
     arObject.visible = false;
     scene.addNode(arObject);
 
-    let flower = new Gltf2Node({ url: 'media/gltf/stereo/stereo.gltf' });
+    let flower = new Gltf2Node({ url: 'media/gltf/xmastree/Xtree.glb' });
     flower.scale.set(0.01, 0.01, 0.01);
     arObject.addNode(flower);
 
@@ -40,78 +48,126 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
-    // ** Reflection Setup **  
-    let cubeRenderTarget, cubeCamera, threeRenderer, threeScene, threeObject;
-
-    function setupReflection() {
-      threeScene = new THREE.Scene();
-
-      // Load HDRI for environment reflections
-      new RGBELoader()
-        .setPath('media/textures/') // Ensure HDR file is in this folder
-        .load('qwantani_night_1k.hdr', function (texture) {
-          texture.mapping = THREE.EquirectangularReflectionMapping;
-          threeScene.environment = texture;
-          threeScene.background = texture;
-          console.log('HDRI environment applied successfully.');
-        });
-
-      cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256);
-      cubeCamera = new THREE.CubeCamera(0.1, 10, cubeRenderTarget);
-
-      threeRenderer = new THREE.WebGLRenderer({ alpha: true });
-      threeRenderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(threeRenderer.domElement);
-
-      threeObject = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 32, 32),
-        new THREE.MeshStandardMaterial({
-          envMap: threeScene.environment,
-          metalness: 1.0,
-          roughness: 0.1
-        })
-      );
-
-      threeScene.add(threeObject);
-
-      // Apply reflections to GLTF Model
-      flower.traverse((node) => {
-        if (node.material) {
-          node.material.envMap = threeScene.environment;
-          node.material.metalness = 1.0;
-          node.material.roughness = 0.1;
-          node.material.needsUpdate = true;
-        }
+    // Session cleanup
+    function onEndSession(session) {
+      if (xrHitTestSource) {
+        xrHitTestSource.cancel();
+        xrHitTestSource = null;
+      }
+      session.end().then(() => {
+        xrButton.setSession(null);
       });
     }
 
-    function updateReflection() {
-      if (cubeCamera) {
-        cubeCamera.position.copy(threeObject.position);
-        cubeCamera.update(threeRenderer, threeScene);
+    // Initialize XR
+    function initXR() {
+      xrButton = new WebXRButton({
+        onRequestSession: onRequestSession,
+        onEndSession: onEndSession,
+        textEnterXRTitle: "START AR",
+        textXRNotFoundTitle: "AR NOT FOUND",
+        textExitXRTitle: "EXIT AR",
+      });
+      document.querySelector('header').appendChild(xrButton.domElement);
+
+      if (navigator.xr) {
+        navigator.xr.isSessionSupported('immersive-ar')
+          .then((supported) => {
+            xrButton.enabled = supported;
+          });
+      }
+
+      document.addEventListener('pointerdown', onPointerDown);
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('touchstart', onTouchStart);
+      document.addEventListener('touchmove', onTouchMove);
+      document.addEventListener('touchend', onTouchEnd);
+    }
+
+    // Pointer (Mouse/Touch) handlers
+    function onPointerDown(event) {
+      if (arObject.visible) {
+        isDragging = true;
+        lastPointerX = event.clientX;
       }
     }
 
-    function onXRFrame(t, frame) {
-      let session = frame.session;
-      let pose = frame.getViewerPose(xrRefSpace);
-      reticle.visible = false;
+    function onPointerMove(event) {
+      if (isDragging && arObject.visible) {
+        const deltaX = event.clientX - lastPointerX;
+        const rotationAmount = deltaX * rotationSpeed;
 
-      if (xrHitTestSource && pose) {
-        let hitTestResults = frame.getHitTestResults(xrHitTestSource);
-        if (hitTestResults.length > 0) {
-          let hitPose = hitTestResults[0].getPose(xrRefSpace);
-          reticle.visible = true;
-          mat4.copy(reticle.matrix, hitPose.transform.matrix);
-        }
+        quat.rotateY(arObject.rotation, arObject.rotation, rotationAmount);
+
+        mat4.fromRotationTranslationScale(
+          arObject.matrix,
+          arObject.rotation,
+          arObject.translation,
+          arObject.scale
+        );
+
+        lastPointerX = event.clientX;
       }
+    }
 
-      updateReflection();
+    function onPointerUp() {
+      isDragging = false;
+    }
 
-      scene.startFrame();
-      session.requestAnimationFrame(onXRFrame);
-      scene.drawXRFrame(frame, pose);
-      scene.endFrame();
+    // Pinch-to-scale handlers
+    function onTouchStart(event) {
+      if (event.touches.length === 2 && arObject.visible) {
+        isPinching = true;
+        lastPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
+      }
+    }
+
+    function onTouchMove(event) {
+      if (isPinching && event.touches.length === 2) {
+        const currentPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
+        const scaleDelta = currentPinchDistance / lastPinchDistance;
+
+        vec3.scale(arObject.scale, arObject.scale, scaleDelta);
+
+        // Clamp scale
+        const minScale = 0.01;
+        const maxScale = 1.0;
+        arObject.scale[0] = Math.max(minScale, Math.min(maxScale, arObject.scale[0]));
+        arObject.scale[1] = Math.max(minScale, Math.min(maxScale, arObject.scale[1]));
+        arObject.scale[2] = Math.max(minScale, Math.min(maxScale, arObject.scale[2]));
+
+        mat4.fromRotationTranslationScale(
+          arObject.matrix,
+          arObject.rotation,
+          arObject.translation,
+          arObject.scale
+        );
+
+        lastPinchDistance = currentPinchDistance;
+      }
+    }
+
+    function onTouchEnd(event) {
+      if (event.touches.length < 2) {
+        isPinching = false;
+        lastPinchDistance = 0;
+      }
+    }
+
+    function getTouchDistance(touch1, touch2) {
+      const dx = touch2.clientX - touch1.clientX;
+      const dy = touch2.clientY - touch1.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // XR Session Management
+    function onRequestSession() {
+      return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
+        .then((session) => {
+          xrButton.setSession(session);
+          onSessionStarted(session);
+        });
     }
 
     function onSessionStarted(session) {
@@ -127,7 +183,8 @@
       session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
 
       session.requestReferenceSpace('viewer').then((refSpace) => {
-        session.requestHitTestSource({ space: refSpace }).then((hitTestSource) => {
+        xrViewerSpace = refSpace;
+        session.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
           xrHitTestSource = hitTestSource;
         });
       });
@@ -136,38 +193,15 @@
         xrRefSpace = refSpace;
         session.requestAnimationFrame(onXRFrame);
       });
-
-      setupReflection();
     }
 
     function onSessionEnded() {
       xrButton.setSession(null);
     }
 
-    function initXR() {
-      xrButton = new WebXRButton({
-        onRequestSession: onRequestSession,
-        onEndSession: onSessionEnded,
-        textEnterXRTitle: "START AR",
-        textXRNotFoundTitle: "AR NOT FOUND",
-        textExitXRTitle: "EXIT AR",
-      });
-      document.querySelector('header').appendChild(xrButton.domElement);
-
-      if (navigator.xr) {
-        navigator.xr.isSessionSupported('immersive-ar')
-          .then((supported) => {
-            xrButton.enabled = supported;
-          });
-      }
-    }
-
-    function onRequestSession() {
-      return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
-        .then((session) => {
-          xrButton.setSession(session);
-          onSessionStarted(session);
-        });
+    function addARObjectAt(matrix) {
+      arObject.visible = true;
+      mat4.copy(arObject.matrix, matrix);
     }
 
     function onSelect() {
@@ -176,9 +210,25 @@
       }
     }
 
-    function addARObjectAt(matrix) {
-      arObject.visible = true;
-      mat4.copy(arObject.matrix, matrix);
+    function onXRFrame(t, frame) {
+      let session = frame.session;
+      let pose = frame.getViewerPose(xrRefSpace);
+
+      reticle.visible = false;
+
+      if (xrHitTestSource && pose) {
+        let hitTestResults = frame.getHitTestResults(xrHitTestSource);
+        if (hitTestResults.length > 0) {
+          let hitPose = hitTestResults[0].getPose(xrRefSpace);
+          reticle.visible = true;
+          mat4.copy(reticle.matrix, hitPose.transform.matrix);
+        }
+      }
+
+      scene.startFrame();
+      session.requestAnimationFrame(onXRFrame);
+      scene.drawXRFrame(frame, pose);
+      scene.endFrame();
     }
 
     initXR();
