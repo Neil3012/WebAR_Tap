@@ -44,6 +44,9 @@
     document.body.appendChild(video);
 
     let videoTexture = null;
+    let videoPlane = new Node();
+    videoPlane.visible = false;
+    scene.addNode(videoPlane);
 
     function initVideoTexture(gl) {
       videoTexture = gl.createTexture();
@@ -131,12 +134,14 @@
     function addARObjectAt(matrix) {
       arObject.visible = true;
       mat4.copy(arObject.matrix, matrix);
+      videoPlane.visible = true;
+      mat4.copy(videoPlane.matrix, matrix);
+      updateVideoTexture();
     }
 
     function onSelect() {
       if (reticle.visible) {
         addARObjectAt(reticle.matrix);
-        updateVideoTexture();
       }
     }
 
