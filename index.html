@@ -1,9 +1,9 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>AR Stereo Video with Depth Occlusion</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AR Video with Depth Occlusion</title>
   <style>
     body { margin: 0; overflow: hidden; }
     video { display: none; }
@@ -31,10 +31,10 @@
   });
 
   videoNode.translation = [0, 0, -2]; // Position video behind person
-  videoNode.scale = [1.5, 1.5, 1.0]; 
+  videoNode.scale = [1.5, 1.5, 1.0];
   scene.addNode(videoNode);
 
-  function initXR() {
+  async function initXR() {
     xrButton = new WebXRButton({
       onRequestSession: onRequestSession,
       onEndSession: onEndSession
@@ -42,9 +42,8 @@
     document.body.appendChild(xrButton.domElement);
 
     if (navigator.xr) {
-      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-        xrButton.enabled = supported;
-      });
+      let supported = await navigator.xr.isSessionSupported('immersive-ar');
+      xrButton.enabled = supported;
     }
   }
 
@@ -58,10 +57,10 @@
 
   async function onRequestSession() {
     let session = await navigator.xr.requestSession('immersive-ar', {
-      requiredFeatures: ['depth-sensing'], // Enable depth sensing
+      requiredFeatures: ['depth-sensing'], // Enable ARCore depth
       depthSensing: {
-        usagePreference: ["opaque-background"], // Allow real-world occlusion
-        dataFormatPreference: ["luminance-alpha"] // Process depth info
+        usagePreference: ["opaque-background"], 
+        dataFormatPreference: ["luminance-alpha"] // Depth buffer
       }
     });
 
@@ -71,8 +70,8 @@
 
   function onSessionStarted(session) {
     session.addEventListener('end', onSessionEnded);
-    
     initGL();
+    
     let glLayer = new XRWebGLLayer(session, gl);
     session.updateRenderState({ baseLayer: glLayer });
 
@@ -81,11 +80,7 @@
       session.requestAnimationFrame(onXRFrame);
     });
 
-    video.play(); // Auto-play video in AR session
-  }
-
-  function onEndSession(session) {
-    session.end();
+    video.play();
   }
 
   function onSessionEnded(event) {
@@ -98,9 +93,22 @@
     let refSpace = xrImmersiveRefSpace;
     let pose = frame.getViewerPose(refSpace);
 
-    if (frame.getDepthInformation) {
-      let depthData = frame.getDepthInformation();
-      // Use depthData to adjust video visibility behind real-world objects
+    // ✅ Get Depth Data from ARCore
+    let depthInfo = frame.getDepthInformation ? frame.getDepthInformation() : null;
+    if (depthInfo) {
+      let depthBuffer = depthInfo.data; // Get raw depth data
+      let width = depthInfo.width;
+      let height = depthInfo.height;
+
+      // Iterate over depth data and mask video where necessary
+      for (let i = 0; i < width * height; i++) {
+        let depth = depthBuffer[i]; // Depth at pixel i
+        if (depth < 1.5) { // If something is closer than 1.5 meters, hide video
+          videoNode.visible = false;
+        } else {
+          videoNode.visible = true;
+        }
+      }
     }
 
     scene.startFrame();
