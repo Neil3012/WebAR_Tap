@@ -48,6 +48,33 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
+    let planeNode = new Node();
+planeNode.visible = false; // Initially hidden
+
+// Define plane size (1x1 meter)
+vec3.set(planeNode.scale, 1, 1, 1); 
+scene.addNode(planeNode);
+
+// Create a basic WebGL shader material for the plane
+let planeMaterial = {
+  vertexShader: `
+    attribute vec3 position;
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    precision mediump float;
+    void main() {
+      gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0); // Gray plane
+    }
+  `,
+};
+
+
+
     // Session cleanup
     function onEndSession(session) {
       if (xrHitTestSource) {
@@ -171,29 +198,32 @@
     }
 
     function onSessionStarted(session) {
-      session.addEventListener('end', onSessionEnded);
-      session.addEventListener('select', onSelect);
+  session.addEventListener('end', onSessionEnded);
+  session.addEventListener('select', onSelect);
 
-      if (!gl) {
-        gl = createWebGLContext({ xrCompatible: true });
-        renderer = new Renderer(gl);
-        scene.setRenderer(renderer);
-      }
+  if (!gl) {
+    gl = createWebGLContext({ xrCompatible: true });
+    renderer = new Renderer(gl);
+    scene.setRenderer(renderer);
+  }
 
-      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
 
-      session.requestReferenceSpace('viewer').then((refSpace) => {
-        xrViewerSpace = refSpace;
-        session.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
-          xrHitTestSource = hitTestSource;
-        });
-      });
+  session.requestReferenceSpace('local').then((refSpace) => {
+    xrRefSpace = refSpace;
+    session.requestAnimationFrame(onXRFrame);
 
-      session.requestReferenceSpace('local').then((refSpace) => {
-        xrRefSpace = refSpace;
-        session.requestAnimationFrame(onXRFrame);
-      });
-    }
+    // Position the plane in front of the camera (2 meters away)
+    planeNode.visible = true;
+    vec3.set(planeNode.translation, 0, -0.5, -2); 
+    mat4.fromRotationTranslationScale(
+      planeNode.matrix,
+      quat.create(),
+      planeNode.translation,
+      [1, 1, 1]
+    );
+  });
+}
 
     function onSessionEnded() {
       xrButton.setSession(null);
