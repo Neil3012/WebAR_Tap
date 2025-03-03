@@ -1,159 +1,113 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR Object Interaction</title>
-  <script type="module">
-    import { WebXRButton } from './js/util/webxr-button.js';
-    import { Scene } from './js/render/scenes/scene.js';
-    import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
-    import { Node } from './js/render/core/node.js';
-    import { Gltf2Node } from './js/render/nodes/gltf2.js';
-    import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
-    import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>AR Stereo Video Player</title>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      video { display: none; } /* Hide video element */
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import { WebXRButton } from './js/util/webxr-button.js';
+      import { Scene } from './js/render/scenes/scene.js';
+      import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
+      import { VideoNode } from './js/render/nodes/video.js';
+      import { InlineViewerHelper } from './js/util/inline-viewer-helper.js';
 
-    let isDragging = false;
-    let isPinching = false;
-    let lastPointerX = 0;
-    let lastPinchDistance = 0;
-    let rotationSpeed = 0.005;
+      let xrButton = null;
+      let xrImmersiveRefSpace = null;
+      let gl = null;
+      let renderer = null;
+      let scene = new Scene();
+      let video = document.createElement('video');
+      video.src = 'media/video/bbb-sunflower-540p2-1min.webm';
+      video.loop = true;
 
-    let xrButton = null;
-    let xrRefSpace = null;
-    let xrViewerSpace = null;
-    let xrHitTestSource = null;
-
-    let gl = null;
-    let renderer = null;
-    let scene = new Scene();
-    scene.enableStats(false);
-
-    let arObject = new Node();
-    arObject.visible = false;
-    scene.addNode(arObject);
-
-    let flower = new Gltf2Node({ url: 'media/gltf/xmastree/Xtree.glb' });
-    flower.scale.set(0.01, 0.01, 0.01);
-    arObject.addNode(flower);
-
-    let reticle = new Gltf2Node({ url: 'media/gltf/reticle/reticle.gltf' });
-    reticle.visible = false;
-    scene.addNode(reticle);
-
-    let shadow = new DropShadowNode();
-    vec3.set(shadow.scale, 0.15, 0.15, 0.15);
-    arObject.addNode(shadow);
-
-    // Updated planeNode with an actual GLTF model
-    let planeNode = new Gltf2Node({ url: 'media/gltf/plane.glb' }); 
-    vec3.set(planeNode.scale, 1, 1, 1);
-    planeNode.visible = false;
-    scene.addNode(planeNode);
-
-    function onEndSession(session) {
-      if (xrHitTestSource) {
-        xrHitTestSource.cancel();
-        xrHitTestSource = null;
-      }
-      session.end().then(() => {
-        xrButton.setSession(null);
+      let videoNode = new VideoNode({
+        video: video,
+        displayMode: 'stereoTopBottom'
       });
-    }
 
-    function initXR() {
-      xrButton = new WebXRButton({
-        onRequestSession: onRequestSession,
-        onEndSession: onEndSession,
-        textEnterXRTitle: "START AR",
-        textXRNotFoundTitle: "AR NOT FOUND",
-        textExitXRTitle: "EXIT AR",
-      });
-      document.querySelector('header').appendChild(xrButton.domElement);
+      videoNode.translation = [0, 0, -1.5]; // Position in AR space
+      videoNode.scale = [1.5, 1.5, 1.0]; // Adjust size
+      scene.addNode(videoNode);
 
-      if (navigator.xr) {
-        navigator.xr.isSessionSupported('immersive-ar')
-          .then((supported) => {
+      function initXR() {
+        xrButton = new WebXRButton({
+          onRequestSession: onRequestSession,
+          onEndSession: onEndSession
+        });
+        document.body.appendChild(xrButton.domElement);
+
+        if (navigator.xr) {
+          navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
             xrButton.enabled = supported;
           });
+        }
       }
-    }
 
-    function onRequestSession() {
-      return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
-        .then((session) => {
-          xrButton.setSession(session);
-          onSessionStarted(session);
-        });
-    }
-
-    function onSessionStarted(session) {
-      session.addEventListener('end', onSessionEnded);
-      session.addEventListener('select', onSelect);
-
-      if (!gl) {
+      function initGL() {
+        if (gl) return;
         gl = createWebGLContext({ xrCompatible: true });
+        document.body.appendChild(gl.canvas);
         renderer = new Renderer(gl);
         scene.setRenderer(renderer);
       }
 
-      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+      async function onRequestSession() {
+        let session = await navigator.xr.requestSession('immersive-ar', {
+          requiredFeatures: ['local-floor', 'hit-test']
+        });
 
-      session.requestReferenceSpace('local').then((refSpace) => {
-        xrRefSpace = refSpace;
+        xrButton.setSession(session);
+        onSessionStarted(session);
+      }
+
+      function onSessionStarted(session) {
+        session.addEventListener('end', onSessionEnded);
+        session.addEventListener('select', (ev) => {
+          let refSpace = xrImmersiveRefSpace;
+          scene.handleSelect(ev.inputSource, ev.frame, refSpace);
+        });
+
+        initGL();
+        let glLayer = new XRWebGLLayer(session, gl);
+        session.updateRenderState({ baseLayer: glLayer });
+
+        session.requestReferenceSpace('local').then((refSpace) => {
+          xrImmersiveRefSpace = refSpace;
+          session.requestAnimationFrame(onXRFrame);
+        });
+
+        video.play(); // Auto-play video in AR session
+      }
+
+      function onEndSession(session) {
+        session.end();
+      }
+
+      function onSessionEnded(event) {
+        xrButton.setSession(null);
+        video.pause();
+      }
+
+      function onXRFrame(t, frame) {
+        let session = frame.session;
+        let refSpace = xrImmersiveRefSpace;
+        let pose = frame.getViewerPose(refSpace);
+        scene.startFrame();
         session.requestAnimationFrame(onXRFrame);
-
-        // Make the plane visible and position it correctly
-        planeNode.visible = true;
-        vec3.set(planeNode.translation, 0, -0.01, -1);
-        mat4.fromRotationTranslationScale(
-          planeNode.matrix,
-          quat.create(),
-          planeNode.translation,
-          [1, 1, 1]
-        );
-      });
-    }
-
-    function onSessionEnded() {
-      xrButton.setSession(null);
-    }
-
-    function addARObjectAt(matrix) {
-      arObject.visible = true;
-      mat4.copy(arObject.matrix, matrix);
-    }
-
-    function onSelect() {
-      if (reticle.visible) {
-        addARObjectAt(reticle.matrix);
-      }
-    }
-
-    function onXRFrame(t, frame) {
-      let session = frame.session;
-      let pose = frame.getViewerPose(xrRefSpace);
-      reticle.visible = false;
-
-      if (xrHitTestSource && pose) {
-        let hitTestResults = frame.getHitTestResults(xrHitTestSource);
-        if (hitTestResults.length > 0) {
-          let hitPose = hitTestResults[0].getPose(xrRefSpace);
-          reticle.visible = true;
-          mat4.copy(reticle.matrix, hitPose.transform.matrix);
-        }
+        scene.updateInputSources(frame, refSpace);
+        scene.drawXRFrame(frame, pose);
+        scene.endFrame();
       }
 
-      scene.startFrame();
-      session.requestAnimationFrame(onXRFrame);
-      scene.drawXRFrame(frame, pose);
-      scene.endFrame();
-    }
-
-    initXR();
-  </script>
-</head>
-<body>
-  <header></header>
-</body>
+      initXR();
+    </script>
+  </body>
 </html>
