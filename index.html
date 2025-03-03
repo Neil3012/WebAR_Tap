@@ -3,30 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AR Object Interaction</title>
+  <title>AR Video Interaction</title>
   <script type="module">
     import { WebXRButton } from './js/util/webxr-button.js';
     import { Scene } from './js/render/scenes/scene.js';
     import { Renderer, createWebGLContext } from './js/render/core/renderer.js';
     import { Node } from './js/render/core/node.js';
-    import { Gltf2Node } from './js/render/nodes/gltf2.js';
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
     import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
-    // Variables for interaction
-    let isDragging = false;
-    let isPinching = false;
-    let lastPointerX = 0;
-    let lastPinchDistance = 0;
-    let rotationSpeed = 0.005;
-
-    // XR variables
     let xrButton = null;
     let xrRefSpace = null;
     let xrViewerSpace = null;
     let xrHitTestSource = null;
 
-    // Renderer, scene, and AR object
     let gl = null;
     let renderer = null;
     let scene = new Scene();
@@ -36,11 +26,7 @@
     arObject.visible = false;
     scene.addNode(arObject);
 
-    let flower = new Gltf2Node({ url: 'media/gltf/xmastree/Xtree.glb' });
-    flower.scale.set(0.01, 0.01, 0.01);
-    arObject.addNode(flower);
-
-    let reticle = new Gltf2Node({ url: 'media/gltf/reticle/reticle.gltf' });
+    let reticle = new Node();
     reticle.visible = false;
     scene.addNode(reticle);
 
@@ -48,7 +34,34 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
-    // Session cleanup
+    let video = document.createElement('video');
+    video.src = 'media/video/sample.mp4';
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.style.display = 'none';
+    document.body.appendChild(video);
+
+    let videoTexture = null;
+
+    function initVideoTexture(gl) {
+      videoTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    }
+
+    function updateVideoTexture() {
+      if (video.readyState >= video.HAVE_CURRENT_DATA) {
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      }
+      requestAnimationFrame(updateVideoTexture);
+    }
+
     function onEndSession(session) {
       if (xrHitTestSource) {
         xrHitTestSource.cancel();
@@ -59,7 +72,6 @@
       });
     }
 
-    // Initialize XR
     function initXR() {
       xrButton = new WebXRButton({
         onRequestSession: onRequestSession,
@@ -76,92 +88,8 @@
             xrButton.enabled = supported;
           });
       }
-
-      document.addEventListener('pointerdown', onPointerDown);
-      document.addEventListener('pointermove', onPointerMove);
-      document.addEventListener('pointerup', onPointerUp);
-      document.addEventListener('touchstart', onTouchStart);
-      document.addEventListener('touchmove', onTouchMove);
-      document.addEventListener('touchend', onTouchEnd);
     }
 
-    // Pointer (Mouse/Touch) handlers
-    function onPointerDown(event) {
-      if (arObject.visible) {
-        isDragging = true;
-        lastPointerX = event.clientX;
-      }
-    }
-
-    function onPointerMove(event) {
-      if (isDragging && arObject.visible) {
-        const deltaX = event.clientX - lastPointerX;
-        const rotationAmount = deltaX * rotationSpeed;
-
-        quat.rotateY(arObject.rotation, arObject.rotation, rotationAmount);
-
-        mat4.fromRotationTranslationScale(
-          arObject.matrix,
-          arObject.rotation,
-          arObject.translation,
-          arObject.scale
-        );
-
-        lastPointerX = event.clientX;
-      }
-    }
-
-    function onPointerUp() {
-      isDragging = false;
-    }
-
-    // Pinch-to-scale handlers
-    function onTouchStart(event) {
-      if (event.touches.length === 2 && arObject.visible) {
-        isPinching = true;
-        lastPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
-      }
-    }
-
-    function onTouchMove(event) {
-      if (isPinching && event.touches.length === 2) {
-        const currentPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
-        const scaleDelta = currentPinchDistance / lastPinchDistance;
-
-        vec3.scale(arObject.scale, arObject.scale, scaleDelta);
-
-        // Clamp scale
-        const minScale = 0.01;
-        const maxScale = 1.0;
-        arObject.scale[0] = Math.max(minScale, Math.min(maxScale, arObject.scale[0]));
-        arObject.scale[1] = Math.max(minScale, Math.min(maxScale, arObject.scale[1]));
-        arObject.scale[2] = Math.max(minScale, Math.min(maxScale, arObject.scale[2]));
-
-        mat4.fromRotationTranslationScale(
-          arObject.matrix,
-          arObject.rotation,
-          arObject.translation,
-          arObject.scale
-        );
-
-        lastPinchDistance = currentPinchDistance;
-      }
-    }
-
-    function onTouchEnd(event) {
-      if (event.touches.length < 2) {
-        isPinching = false;
-        lastPinchDistance = 0;
-      }
-    }
-
-    function getTouchDistance(touch1, touch2) {
-      const dx = touch2.clientX - touch1.clientX;
-      const dy = touch2.clientY - touch1.clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    // XR Session Management
     function onRequestSession() {
       return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
         .then((session) => {
@@ -178,6 +106,7 @@
         gl = createWebGLContext({ xrCompatible: true });
         renderer = new Renderer(gl);
         scene.setRenderer(renderer);
+        initVideoTexture(gl);
       }
 
       session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
@@ -207,13 +136,13 @@
     function onSelect() {
       if (reticle.visible) {
         addARObjectAt(reticle.matrix);
+        updateVideoTexture();
       }
     }
 
     function onXRFrame(t, frame) {
       let session = frame.session;
       let pose = frame.getViewerPose(xrRefSpace);
-
       reticle.visible = false;
 
       if (xrHitTestSource && pose) {
