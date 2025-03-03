@@ -13,20 +13,17 @@
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
     import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
-    // Variables for interaction
     let isDragging = false;
     let isPinching = false;
     let lastPointerX = 0;
     let lastPinchDistance = 0;
     let rotationSpeed = 0.005;
 
-    // XR variables
     let xrButton = null;
     let xrRefSpace = null;
     let xrViewerSpace = null;
     let xrHitTestSource = null;
 
-    // Renderer, scene, and AR object
     let gl = null;
     let renderer = null;
     let scene = new Scene();
@@ -48,34 +45,12 @@
     vec3.set(shadow.scale, 0.15, 0.15, 0.15);
     arObject.addNode(shadow);
 
-    let planeNode = new Node();
-planeNode.visible = false; // Initially hidden
+    // Updated planeNode with an actual GLTF model
+    let planeNode = new Gltf2Node({ url: 'media/gltf/plane.glb' }); 
+    vec3.set(planeNode.scale, 1, 1, 1);
+    planeNode.visible = false;
+    scene.addNode(planeNode);
 
-// Define plane size (1x1 meter)
-vec3.set(planeNode.scale, 1, 1, 1); 
-scene.addNode(planeNode);
-
-// Create a basic WebGL shader material for the plane
-let planeMaterial = {
-  vertexShader: `
-    attribute vec3 position;
-    uniform mat4 modelViewMatrix;
-    uniform mat4 projectionMatrix;
-    void main() {
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    precision mediump float;
-    void main() {
-      gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0); // Gray plane
-    }
-  `,
-};
-
-
-
-    // Session cleanup
     function onEndSession(session) {
       if (xrHitTestSource) {
         xrHitTestSource.cancel();
@@ -86,7 +61,6 @@ let planeMaterial = {
       });
     }
 
-    // Initialize XR
     function initXR() {
       xrButton = new WebXRButton({
         onRequestSession: onRequestSession,
@@ -103,92 +77,8 @@ let planeMaterial = {
             xrButton.enabled = supported;
           });
       }
-
-      document.addEventListener('pointerdown', onPointerDown);
-      document.addEventListener('pointermove', onPointerMove);
-      document.addEventListener('pointerup', onPointerUp);
-      document.addEventListener('touchstart', onTouchStart);
-      document.addEventListener('touchmove', onTouchMove);
-      document.addEventListener('touchend', onTouchEnd);
     }
 
-    // Pointer (Mouse/Touch) handlers
-    function onPointerDown(event) {
-      if (arObject.visible) {
-        isDragging = true;
-        lastPointerX = event.clientX;
-      }
-    }
-
-    function onPointerMove(event) {
-      if (isDragging && arObject.visible) {
-        const deltaX = event.clientX - lastPointerX;
-        const rotationAmount = deltaX * rotationSpeed;
-
-        quat.rotateY(arObject.rotation, arObject.rotation, rotationAmount);
-
-        mat4.fromRotationTranslationScale(
-          arObject.matrix,
-          arObject.rotation,
-          arObject.translation,
-          arObject.scale
-        );
-
-        lastPointerX = event.clientX;
-      }
-    }
-
-    function onPointerUp() {
-      isDragging = false;
-    }
-
-    // Pinch-to-scale handlers
-    function onTouchStart(event) {
-      if (event.touches.length === 2 && arObject.visible) {
-        isPinching = true;
-        lastPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
-      }
-    }
-
-    function onTouchMove(event) {
-      if (isPinching && event.touches.length === 2) {
-        const currentPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
-        const scaleDelta = currentPinchDistance / lastPinchDistance;
-
-        vec3.scale(arObject.scale, arObject.scale, scaleDelta);
-
-        // Clamp scale
-        const minScale = 0.01;
-        const maxScale = 1.0;
-        arObject.scale[0] = Math.max(minScale, Math.min(maxScale, arObject.scale[0]));
-        arObject.scale[1] = Math.max(minScale, Math.min(maxScale, arObject.scale[1]));
-        arObject.scale[2] = Math.max(minScale, Math.min(maxScale, arObject.scale[2]));
-
-        mat4.fromRotationTranslationScale(
-          arObject.matrix,
-          arObject.rotation,
-          arObject.translation,
-          arObject.scale
-        );
-
-        lastPinchDistance = currentPinchDistance;
-      }
-    }
-
-    function onTouchEnd(event) {
-      if (event.touches.length < 2) {
-        isPinching = false;
-        lastPinchDistance = 0;
-      }
-    }
-
-    function getTouchDistance(touch1, touch2) {
-      const dx = touch2.clientX - touch1.clientX;
-      const dy = touch2.clientY - touch1.clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    // XR Session Management
     function onRequestSession() {
       return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
         .then((session) => {
@@ -198,32 +88,32 @@ let planeMaterial = {
     }
 
     function onSessionStarted(session) {
-  session.addEventListener('end', onSessionEnded);
-  session.addEventListener('select', onSelect);
+      session.addEventListener('end', onSessionEnded);
+      session.addEventListener('select', onSelect);
 
-  if (!gl) {
-    gl = createWebGLContext({ xrCompatible: true });
-    renderer = new Renderer(gl);
-    scene.setRenderer(renderer);
-  }
+      if (!gl) {
+        gl = createWebGLContext({ xrCompatible: true });
+        renderer = new Renderer(gl);
+        scene.setRenderer(renderer);
+      }
 
-  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
 
-  session.requestReferenceSpace('local').then((refSpace) => {
-    xrRefSpace = refSpace;
-    session.requestAnimationFrame(onXRFrame);
+      session.requestReferenceSpace('local').then((refSpace) => {
+        xrRefSpace = refSpace;
+        session.requestAnimationFrame(onXRFrame);
 
-    // Position the plane in front of the camera (2 meters away)
-    planeNode.visible = true;
-    vec3.set(planeNode.translation, 0, -0.5, -2); 
-    mat4.fromRotationTranslationScale(
-      planeNode.matrix,
-      quat.create(),
-      planeNode.translation,
-      [1, 1, 1]
-    );
-  });
-}
+        // Make the plane visible and position it correctly
+        planeNode.visible = true;
+        vec3.set(planeNode.translation, 0, -0.01, -1);
+        mat4.fromRotationTranslationScale(
+          planeNode.matrix,
+          quat.create(),
+          planeNode.translation,
+          [1, 1, 1]
+        );
+      });
+    }
 
     function onSessionEnded() {
       xrButton.setSession(null);
@@ -243,7 +133,6 @@ let planeMaterial = {
     function onXRFrame(t, frame) {
       let session = frame.session;
       let pose = frame.getViewerPose(xrRefSpace);
-
       reticle.visible = false;
 
       if (xrHitTestSource && pose) {
