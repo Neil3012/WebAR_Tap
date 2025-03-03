@@ -11,73 +11,209 @@
     import { Node } from './js/render/core/node.js';
     import { Gltf2Node } from './js/render/nodes/gltf2.js';
     import { DropShadowNode } from './js/render/nodes/drop-shadow.js';
-    import { vec3, mat4 } from './js/render/math/gl-matrix.js';
-    import { UrlTexture } from './js/render/core/texture.js';
-    import { ButtonNode } from './js/render/nodes/button.js';
+    import { vec3, quat, mat4 } from './js/render/math/gl-matrix.js';
 
+    // Variables for interaction
+    let isDragging = false;
+    let isPinching = false;
+    let lastPointerX = 0;
+    let lastPinchDistance = 0;
+    let rotationSpeed = 0.005;
+
+    // XR variables
     let xrButton = null;
     let xrRefSpace = null;
+    let xrViewerSpace = null;
     let xrHitTestSource = null;
-    let gl = createWebGLContext({ xrCompatible: true });
-    let renderer = new Renderer(gl);
+
+    // Renderer, scene, and AR object
+    let gl = null;
+    let renderer = null;
     let scene = new Scene();
-    scene.setRenderer(renderer);
     scene.enableStats(false);
 
     let arObject = new Node();
     arObject.visible = false;
     scene.addNode(arObject);
 
+    let flower = new Gltf2Node({ url: 'media/gltf/xmastree/Xtree.glb' });
+    flower.scale.set(0.01, 0.01, 0.01);
+    arObject.addNode(flower);
+
     let reticle = new Gltf2Node({ url: 'media/gltf/reticle/reticle.gltf' });
     reticle.visible = false;
     scene.addNode(reticle);
 
-    let video = document.createElement('video');
-    video.src = 'media/video/Demowebm.webm';
-    video.loop = true;
-    video.muted = false;
-    video.playsInline = true;
-    video.style.display = 'none';
-    document.body.appendChild(video);
+    let shadow = new DropShadowNode();
+    vec3.set(shadow.scale, 0.15, 0.15, 0.15);
+    arObject.addNode(shadow);
 
-    let playTexture = new UrlTexture('media/textures/play-button.png');
-    let playButton = new ButtonNode(playTexture, () => {
-      if (video.paused) {
-        video.play();
-        playButton.visible = false;
+    // Session cleanup
+    function onEndSession(session) {
+      if (xrHitTestSource) {
+        xrHitTestSource.cancel();
+        xrHitTestSource = null;
       }
-    });
-    playButton.translation = [0, 0.5, -1.5];
-    playButton.scale = [0.5, 0.5, 0.5];
-    scene.addNode(playButton);
+      session.end().then(() => {
+        xrButton.setSession(null);
+      });
+    }
 
+    // Initialize XR
     function initXR() {
       xrButton = new WebXRButton({
         onRequestSession: onRequestSession,
         onEndSession: onEndSession,
+        textEnterXRTitle: "START AR",
+        textXRNotFoundTitle: "AR NOT FOUND",
+        textExitXRTitle: "EXIT AR",
       });
       document.querySelector('header').appendChild(xrButton.domElement);
 
       if (navigator.xr) {
         navigator.xr.isSessionSupported('immersive-ar')
-          .then(supported => xrButton.enabled = supported);
+          .then((supported) => {
+            xrButton.enabled = supported;
+          });
+      }
+
+      document.addEventListener('pointerdown', onPointerDown);
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('touchstart', onTouchStart);
+      document.addEventListener('touchmove', onTouchMove);
+      document.addEventListener('touchend', onTouchEnd);
+    }
+
+    // Pointer (Mouse/Touch) handlers
+    function onPointerDown(event) {
+      if (arObject.visible) {
+        isDragging = true;
+        lastPointerX = event.clientX;
       }
     }
 
+    function onPointerMove(event) {
+      if (isDragging && arObject.visible) {
+        const deltaX = event.clientX - lastPointerX;
+        const rotationAmount = deltaX * rotationSpeed;
+
+        quat.rotateY(arObject.rotation, arObject.rotation, rotationAmount);
+
+        mat4.fromRotationTranslationScale(
+          arObject.matrix,
+          arObject.rotation,
+          arObject.translation,
+          arObject.scale
+        );
+
+        lastPointerX = event.clientX;
+      }
+    }
+
+    function onPointerUp() {
+      isDragging = false;
+    }
+
+    // Pinch-to-scale handlers
+    function onTouchStart(event) {
+      if (event.touches.length === 2 && arObject.visible) {
+        isPinching = true;
+        lastPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
+      }
+    }
+
+    function onTouchMove(event) {
+      if (isPinching && event.touches.length === 2) {
+        const currentPinchDistance = getTouchDistance(event.touches[0], event.touches[1]);
+        const scaleDelta = currentPinchDistance / lastPinchDistance;
+
+        vec3.scale(arObject.scale, arObject.scale, scaleDelta);
+
+        // Clamp scale
+        const minScale = 0.01;
+        const maxScale = 1.0;
+        arObject.scale[0] = Math.max(minScale, Math.min(maxScale, arObject.scale[0]));
+        arObject.scale[1] = Math.max(minScale, Math.min(maxScale, arObject.scale[1]));
+        arObject.scale[2] = Math.max(minScale, Math.min(maxScale, arObject.scale[2]));
+
+        mat4.fromRotationTranslationScale(
+          arObject.matrix,
+          arObject.rotation,
+          arObject.translation,
+          arObject.scale
+        );
+
+        lastPinchDistance = currentPinchDistance;
+      }
+    }
+
+    function onTouchEnd(event) {
+      if (event.touches.length < 2) {
+        isPinching = false;
+        lastPinchDistance = 0;
+      }
+    }
+
+    function getTouchDistance(touch1, touch2) {
+      const dx = touch2.clientX - touch1.clientX;
+      const dy = touch2.clientY - touch1.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // XR Session Management
     function onRequestSession() {
       return navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['local', 'hit-test'] })
-        .then(session => {
+        .then((session) => {
           xrButton.setSession(session);
-          session.requestReferenceSpace('local').then(refSpace => {
-            xrRefSpace = refSpace;
-            session.requestAnimationFrame(onXRFrame);
-          });
+          onSessionStarted(session);
         });
+    }
+
+    function onSessionStarted(session) {
+      session.addEventListener('end', onSessionEnded);
+      session.addEventListener('select', onSelect);
+
+      if (!gl) {
+        gl = createWebGLContext({ xrCompatible: true });
+        renderer = new Renderer(gl);
+        scene.setRenderer(renderer);
+      }
+
+      session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+
+      session.requestReferenceSpace('viewer').then((refSpace) => {
+        xrViewerSpace = refSpace;
+        session.requestHitTestSource({ space: xrViewerSpace }).then((hitTestSource) => {
+          xrHitTestSource = hitTestSource;
+        });
+      });
+
+      session.requestReferenceSpace('local').then((refSpace) => {
+        xrRefSpace = refSpace;
+        session.requestAnimationFrame(onXRFrame);
+      });
+    }
+
+    function onSessionEnded() {
+      xrButton.setSession(null);
+    }
+
+    function addARObjectAt(matrix) {
+      arObject.visible = true;
+      mat4.copy(arObject.matrix, matrix);
+    }
+
+    function onSelect() {
+      if (reticle.visible) {
+        addARObjectAt(reticle.matrix);
+      }
     }
 
     function onXRFrame(t, frame) {
       let session = frame.session;
       let pose = frame.getViewerPose(xrRefSpace);
+
       reticle.visible = false;
 
       if (xrHitTestSource && pose) {
