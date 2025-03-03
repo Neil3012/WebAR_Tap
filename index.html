@@ -34,7 +34,8 @@
       });
 
       videoNode.translation = [0, 0, -1.5]; // Position in AR space
-      videoNode.scale = [0.3, 2.5, 1.0]; // Adjust size
+      videoNode.scale = [1.0, 1.78, 1.0]; // Width = 1.0, Height = 1.78 (maintains aspect ratio)
+
       scene.addNode(videoNode);
 
       function initXR() {
