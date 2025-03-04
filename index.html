@@ -33,9 +33,17 @@
         displayMode: 'stereoTopBottom'
       });
 
-      videoNode.translation = [0, 0, -2]; // Move video further to avoid cropping
-videoNode.scale = [1.125, 4.0, 1.0]; // Adjust height to prevent cropping
+      videoNode.translation = [0, 0.275, -2.5]; // Adjust Y and move further back
+videoNode.scale = [2.1, 1.1, 1.0]; // Maintain proper aspect ratio
 
+video.addEventListener('loadeddata', () => {
+  let aspect = video.videoWidth / video.videoHeight;
+  if (aspect < 2.0) {
+    videoNode.scale = [aspect * 1.1, 1.1, 1.0];
+  } else {
+    videoNode.scale = [2.1, 2.1 / aspect, 1.0];
+  }
+});
 
       scene.addNode(videoNode);
 
